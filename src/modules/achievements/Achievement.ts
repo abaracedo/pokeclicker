@@ -4,13 +4,13 @@ import {
 import NotificationConstants from '../notifications/NotificationConstants';
 import Notifier from '../notifications/Notifier';
 import AchievementRequirement from '../requirements/AchievementRequirement';
-import * as GameConstants from '../GameConstants';
 import { LogBookTypes } from '../logbook/LogBookTypes';
 import LogEvent from '../LogEvent';
+import AchievementCategory from './AchievementCategory';
 
 export default class Achievement {
     public isCompleted: KnockoutComputed<boolean> = ko.pureComputed(() => this.achievable() && (this.unlocked || this.property.isCompleted()));
-    public getProgressText: KnockoutComputed<string> = ko.pureComputed(() => `${this.getProgress()}/${this.property.requiredValue}`);
+    public getProgressText: KnockoutComputed<string> = ko.pureComputed(() => `${this.getProgress().toLocaleString('en-US')} / ${this.property.requiredValue.toLocaleString('en-US')}`);
     public bonus = 0;
     public unlocked = false;
 
@@ -19,7 +19,7 @@ export default class Achievement {
         public description: string,
         public property: AchievementRequirement,
         public bonusWeight: number,
-        public region: GameConstants.Region,
+        public category: AchievementCategory,
         public achievableFunction: () => boolean | null = null,
     ) {}
 

@@ -7,10 +7,17 @@ enum PartyPokemonSaveKeys {
     shiny,
     category,
     levelEvolutionTriggered,
+    pokerus,
+    effortPoints,
+    heldItem,
+    defaultFemaleSprite,
 }
 
 class PartyPokemon implements Saveable {
     saveKey: string;
+    public exp = 0;
+    public evs: KnockoutComputed<number>;
+    _attack: KnockoutComputed<number>;
 
     defaults = {
         attackBonusPercent: 0,
@@ -21,44 +28,115 @@ class PartyPokemon implements Saveable {
         shiny: false,
         category: 0,
         levelEvolutionTriggered: false,
+        pokerus: GameConstants.Pokerus.Uninfected,
+        effortPoints: 0,
+        defaultFemaleSprite: false,
     };
 
+    // Saveable observables
     _breeding: KnockoutObservable<boolean>;
     _shiny: KnockoutObservable<boolean>;
     _level: KnockoutObservable<number>;
-    _attack: KnockoutObservable<number>;
     _attackBonusPercent: KnockoutObservable<number>;
     _attackBonusAmount: KnockoutObservable<number>;
     _category: KnockoutObservable<number>;
+    _pokerus: KnockoutObservable<GameConstants.Pokerus>;
     proteinsUsed: KnockoutObservable<number>;
+    _effortPoints: KnockoutObservable<number>;
+    heldItem: KnockoutObservable<HeldItem>;
+    defaultFemaleSprite: KnockoutObservable<boolean>;
 
     constructor(
         public id: number,
         public name: PokemonNameType,
         public evolutions: Evolution[],
         public baseAttack: number,
-        attackBonusPercent = 0,
-        attackBonusAmount = 0,
-        proteinsUsed,
-        public exp: number = 0,
-        breeding = false,
         shiny = false,
-        category = 0
+        public gender
     ) {
-        this.proteinsUsed = ko.observable(proteinsUsed);
-        this._breeding = ko.observable(breeding);
-        this._shiny = ko.observable(shiny);
-        this._level = ko.observable(1);
-        this._attackBonusPercent = ko.observable(attackBonusPercent);
-        this._attackBonusAmount = ko.observable(attackBonusAmount);
-        this._attack = ko.observable(this.calculateAttack());
-        this._category = ko.observable(category);
+        this.proteinsUsed = ko.observable(0).extend({ numeric: 0 });
+        this._breeding = ko.observable(false).extend({ boolean: null });
+        this._shiny = ko.observable(shiny).extend({ boolean: null });
+        this._level = ko.observable(1).extend({ numeric: 0 });
+        this._attackBonusPercent = ko.observable(0).extend({ numeric: 0 });
+        this._attackBonusAmount = ko.observable(0).extend({ numeric: 0 });
+        this._category = ko.observable(0).extend({ numeric: 0 });
+        this._pokerus = ko.observable(GameConstants.Pokerus.Uninfected).extend({ numeric: 0 });
+        this._effortPoints = ko.observable(0).extend({ numeric: 0 });
+        this.evs = ko.pureComputed(() => {
+            const power = App.game.challenges.list.slowEVs.active() ? GameConstants.EP_CHALLENGE_MODIFIER : 1;
+            return Math.floor(this.effortPoints / GameConstants.EP_EV_RATIO / power);
+        });
+        this.evs.subscribe((newValue) => {
+            // Change Pokerus status to Resistant when reaching 50 EVs
+            if (this.pokerus && this.pokerus < GameConstants.Pokerus.Resistant && newValue >= 50) {
+                this.pokerus = GameConstants.Pokerus.Resistant;
+
+                // Log and notify player
+                Notifier.notify({
+                    message: `${this.name} has become Resistant to Pokérus.`,
+                    type: NotificationConstants.NotificationOption.info,
+                    setting: NotificationConstants.NotificationSetting.General.pokerus,
+                });
+                App.game.logbook.newLog(LogBookTypes.NEW, `${this.name} has become Resistant to Pokérus.`);
+            }
+        });
+        this._attack = ko.pureComputed(() => this.calculateAttack());
+        this.heldItem = ko.observable(undefined);
+        this.defaultFemaleSprite = ko.observable(false);
     }
 
     public calculateAttack(ignoreLevel = false): number {
         const attackBonusMultiplier = 1 + (this.attackBonusPercent / 100);
         const levelMultiplier = ignoreLevel ? 1 : this.level / 100;
-        return Math.max(1, Math.floor((this.baseAttack * attackBonusMultiplier + this.attackBonusAmount) * levelMultiplier));
+        const evsMultiplier = this.calculateEVAttackBonus();
+        const heldItemMultiplier = this.heldItem && this.heldItem() instanceof AttackBonusHeldItem ? (this.heldItem() as AttackBonusHeldItem).attackBonus : 1;
+        return Math.max(1, Math.floor((this.baseAttack * attackBonusMultiplier + this.attackBonusAmount) * levelMultiplier * evsMultiplier * heldItemMultiplier));
+    }
+
+    public calculateEVAttackBonus(): number {
+        if (this.pokerus < GameConstants.Pokerus.Contagious) {
+            return 1;
+        }
+        return (this.evs() < 50) ? (1 + 0.01 * this.evs()) : (Math.pow(this.evs(),Math.log(1.5) / Math.log(50)));
+    }
+
+    public canCatchPokerus(): boolean {
+        return App.game.keyItems.hasKeyItem(KeyItemType.Pokerus_virus);
+    }
+
+    public calculatePokerusTypes(): Set<number> {
+        // Egg can't hatch and valid Egg has pokerus
+        const eggTypes: Set<number> = new Set();
+        for (let i = 0; i < App.game.breeding.eggList.length; i++) {
+            if (i > App.game.breeding.hatcheryHelpers.hired().length - 1) {
+                const egg = App.game.breeding.eggList[i]();
+                if (!egg.canHatch() && !egg.isNone()) {
+                    const pokerus = App.game.party.getPokemon(pokemonMap[egg.pokemon].id)?.pokerus;
+                    if (pokerus && pokerus >= GameConstants.Pokerus.Contagious) {
+                        eggTypes.add(PokemonHelper.getPokemonByName(pokemonMap[App.game.breeding.eggList[i]().pokemon].name).type1);
+                        eggTypes.add(PokemonHelper.getPokemonByName(pokemonMap[App.game.breeding.eggList[i]().pokemon].name).type2);
+                    }
+                }
+            }
+        }
+        if (eggTypes.has(PokemonType.None)) {
+            eggTypes.delete(PokemonType.None);
+        }
+        return eggTypes;
+    }
+
+    public calculatePokerus(index: number) {
+        const eggTypes = this.calculatePokerusTypes();
+        for (let i = index; i < App.game.breeding.eggList.length; i++) {
+            const pokemon = App.game.breeding.eggList[i]().partyPokemon();
+            if (pokemon && pokemon.pokerus == GameConstants.Pokerus.Uninfected) {
+                const dataPokemon = PokemonHelper.getPokemonByName(pokemon.name);
+                if (eggTypes.has(dataPokemon.type1) || eggTypes.has(dataPokemon.type2)) {
+                    pokemon.pokerus = GameConstants.Pokerus.Infected;
+                }
+            }
+        }
     }
 
     calculateLevelFromExp() {
@@ -72,14 +150,21 @@ class PartyPokemon implements Saveable {
     }
 
     public gainExp(exp: number) {
-        this.exp += exp;
+        this.exp += exp * this.getExpMultiplier();
         const oldLevel = this.level;
         const newLevel = this.calculateLevelFromExp();
         if (oldLevel !== newLevel) {
             this.level = newLevel;
-            this.attack = this.calculateAttack();
             this.checkForLevelEvolution();
         }
+    }
+
+    private getExpMultiplier() {
+        let result = 1;
+        if (this.heldItem() && this.heldItem() instanceof ExpGainedBonusHeldItem) {
+            result *= (this.heldItem() as ExpGainedBonusHeldItem).gainedBonus;
+        }
+        return result;
     }
 
     public checkForLevelEvolution() {
@@ -142,10 +227,87 @@ class PartyPokemon implements Saveable {
         return (player.highestRegion() + 1) * 5 - this.proteinsUsed();
     };
 
-    public hideFromProteinList = (): boolean => {
-        return this.breeding ||
-            (this.proteinUsesRemaining() == 0 && Settings.getSetting('proteinHideMaxedPokemon').observableValue()) ||
-            (this.shiny && Settings.getSetting('proteinHideShinyPokemon').observableValue());
+    public hideFromProteinList = ko.pureComputed(() => {
+        if (this._breeding()) {
+            return true;
+        }
+        if (!new RegExp(Settings.getSetting('proteinSearchFilter').observableValue() , 'i').test(this.name)) {
+            return true;
+        }
+        if (Settings.getSetting('proteinRegionFilter').observableValue() > -2) {
+            if (PokemonHelper.calcNativeRegion(this.name) !== Settings.getSetting('proteinRegionFilter').observableValue()) {
+                return true;
+            }
+        }
+        const type = Settings.getSetting('proteinTypeFilter').observableValue();
+        if (type > -2 && !pokemonMap[this.name].type.includes(type)) {
+            return true;
+        }
+        if (this.proteinUsesRemaining() == 0 && Settings.getSetting('proteinHideMaxedPokemon').observableValue()) {
+            return true;
+        }
+        if (this._shiny() && Settings.getSetting('proteinHideShinyPokemon').observableValue()) {
+            return true;
+        }
+        return false;
+    });
+
+    public giveHeldItem = (heldItem: HeldItem): void => {
+        if (!this.heldItem() || heldItem.name != this.heldItem().name) {
+            if (heldItem && !heldItem.canUse(this)) {
+                Notifier.notify({
+                    message: `This pokémon cannot use ${heldItem.displayName}.`,
+                    type: NotificationConstants.NotificationOption.warning,
+                });
+                return;
+            }
+            if (player.amountOfItem(heldItem.name) < 1) {
+                Notifier.notify({
+                    message: `You don't have any ${heldItem.displayName} left.`,
+                    type: NotificationConstants.NotificationOption.warning,
+                });
+                return;
+            }
+            if (App.game.party.caughtPokemon.some(p => p.heldItem() && p.heldItem().name == heldItem.name)) {
+                Notifier.notify({
+                    message: 'Only one of each held items can be used.',
+                    type: NotificationConstants.NotificationOption.warning,
+                });
+                return;
+            }
+
+            if (App.game.party.caughtPokemon.filter(p => p.heldItem()).length >= 6) {
+                Notifier.notify({
+                    message: 'Only 6 pokemons can hold items at a time.',
+                    type: NotificationConstants.NotificationOption.warning,
+                });
+                return;
+            }
+        }
+
+        if (this.heldItem()) {
+            Notifier.confirm({
+                title: 'Remove held item',
+                message: 'Held items are one time use only.\nRemoved items will be lost.\nAre you sure you want to remove it?',
+                confirm: 'Remove',
+                type: NotificationConstants.NotificationOption.warning,
+            }).then((confirmed) => {
+                if (confirmed) {
+                    this.addOrRemoveHeldItem(heldItem);
+                }
+            });
+        } else { // Notifier.confirm is async
+            this.addOrRemoveHeldItem(heldItem);
+        }
+
+    }
+    private addOrRemoveHeldItem(heldItem: HeldItem) {
+        if (this.heldItem() && this.heldItem().name == heldItem.name) {
+            this.heldItem(undefined);
+        } else {
+            player.loseItem(heldItem.name, 1);
+            this.heldItem(heldItem);
+        }
     }
 
     public fromJSON(json: Record<string, any>): void {
@@ -153,7 +315,7 @@ class PartyPokemon implements Saveable {
             return;
         }
 
-        if (json['id'] == null) {
+        if (json.id == null) {
             return;
         }
 
@@ -165,7 +327,10 @@ class PartyPokemon implements Saveable {
         this.shiny = json[PartyPokemonSaveKeys.shiny] ?? this.defaults.shiny;
         this.category = json[PartyPokemonSaveKeys.category] ?? this.defaults.category;
         this.level = this.calculateLevelFromExp();
-        this.attack = this.calculateAttack();
+        this.pokerus = json[PartyPokemonSaveKeys.pokerus] ?? this.defaults.pokerus;
+        this.effortPoints = json[PartyPokemonSaveKeys.effortPoints] ?? this.defaults.effortPoints;
+        this.heldItem(json[PartyPokemonSaveKeys.heldItem] && ItemList[json[PartyPokemonSaveKeys.heldItem]] instanceof HeldItem ? ItemList[json[PartyPokemonSaveKeys.heldItem]] as HeldItem : undefined);
+        this.defaultFemaleSprite(json[PartyPokemonSaveKeys.defaultFemaleSprite] ?? this.defaults.defaultFemaleSprite);
 
         if (this.evolutions != null) {
             for (const evolution of this.evolutions) {
@@ -174,7 +339,6 @@ class PartyPokemon implements Saveable {
                 }
             }
         }
-
     }
 
     public toJSON() {
@@ -196,6 +360,10 @@ class PartyPokemon implements Saveable {
             [PartyPokemonSaveKeys.shiny]: this.shiny,
             [PartyPokemonSaveKeys.levelEvolutionTriggered]: levelEvolutionTriggered,
             [PartyPokemonSaveKeys.category]: this.category,
+            [PartyPokemonSaveKeys.pokerus]: this.pokerus,
+            [PartyPokemonSaveKeys.effortPoints]: this.effortPoints,
+            [PartyPokemonSaveKeys.heldItem]: this.heldItem()?.name,
+            [PartyPokemonSaveKeys.defaultFemaleSprite]: this.defaultFemaleSprite(),
         };
 
         // Don't save anything that is the default option
@@ -221,10 +389,6 @@ class PartyPokemon implements Saveable {
         return this._attack();
     }
 
-    set attack(attack: number) {
-        this._attack(attack);
-    }
-
     get attackBonusAmount(): number {
         return this._attackBonusAmount();
     }
@@ -247,6 +411,22 @@ class PartyPokemon implements Saveable {
 
     set breeding(bool: boolean) {
         this._breeding(bool);
+    }
+
+    get pokerus(): GameConstants.Pokerus {
+        return this._pokerus();
+    }
+
+    set pokerus(index: GameConstants.Pokerus) {
+        this._pokerus(index);
+    }
+
+    get effortPoints(): number {
+        return this._effortPoints();
+    }
+
+    set effortPoints(amount: number) {
+        this._effortPoints(amount);
     }
 
     get shiny(): boolean {

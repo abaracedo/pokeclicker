@@ -6,10 +6,12 @@ class DefeatPokemonsQuest extends Quest implements QuestInterface {
         killsNeeded: number,
         reward: number,
         public route: number,
-        public region: GameConstants.Region
+        public region: GameConstants.Region,
+        customDescription: string = undefined
     ) {
         super(killsNeeded, reward);
         this.focus = App.game.statistics.routeKills[this.region][this.route];
+        this.customDescription = customDescription;
     }
 
     public static generateData(): any[] {
@@ -30,14 +32,14 @@ class DefeatPokemonsQuest extends Quest implements QuestInterface {
     }
 
     get description(): string {
-        return `Defeat ${this.amount.toLocaleString('en-US')} Pokémon on ${Routes.getName(this.route, this.region)}.`;
+        return this.customDescription ?? `Defeat ${this.amount.toLocaleString('en-US')} Pokémon on ${Routes.getName(this.route, this.region, true)}.`;
     }
 
     toJSON() {
         const json = super.toJSON();
-        json['name'] = this.constructor.name;
-        json['data'].push(this.route);
-        json['data'].push(this.region);
+        json.name = this.constructor.name;
+        json.data.push(this.route);
+        json.data.push(this.region);
         return json;
     }
 }

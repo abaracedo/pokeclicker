@@ -21,11 +21,13 @@ import ItemType from './enums/ItemType';
 import KeyItemType from './enums/KeyItemType';
 import MulchType from './enums/MulchType';
 import PlotStage from './enums/PlotStage';
+import QuestLineState from './quests/QuestLineState';
 // end enums
 import BooleanSetting from './settings/BooleanSetting';
 import RangeSetting from './settings/RangeSetting';
 import Setting from './settings/Setting';
 import SettingOption from './settings/SettingOption';
+import BreedingFilters from './settings/BreedingFilters';
 import WeatherType from './weather/WeatherType';
 import Weather from './weather/Weather';
 import SeededRand from './utilities/SeededRand';
@@ -34,6 +36,7 @@ import Rand from './utilities/Rand';
 import Settings from './settings/index';
 import { SortOptionConfigs, SortOptions } from './settings/SortOptions';
 import { AchievementSortOptionConfigs, AchievementSortOptions } from './achievements/AchievementSortOptions';
+import AchievementCategory from './achievements/AchievementCategory';
 import NotificationConstants from './notifications/NotificationConstants';
 import Notifier from './notifications/Notifier';
 import LogBook from './logbook/LogBook';
@@ -62,13 +65,14 @@ import OakItem from './oakItems/OakItem';
 import OakItems from './oakItems/OakItems';
 import BoughtOakItem from './oakItems/BoughtOakItem';
 import OakItemController from './oakItems/OakItemController';
+import OakItemLoadout from './oakItems/OakItemLoadout';
 import OakItemLoadouts from './oakItems/OakItemLoadouts';
 import SpecialRoutePokemon from './routes/SpecialRoutePokemon';
 import RoutePokemon from './routes/RoutePokemon';
 import RegionRoute from './routes/RegionRoute';
 import Routes from './routes/Routes';
 import SubRegion from './subRegion/SubRegion';
-import SubRegions, { AlolaSubRegions } from './subRegion/SubRegions';
+import SubRegions from './subRegion/SubRegions';
 import Requirement from './requirements/Requirement';
 import AchievementRequirement from './requirements/AchievementRequirement';
 import NullRequirement from './requirements/NullRequirement';
@@ -85,21 +89,30 @@ import ClearGymRequirement from './requirements/ClearGymRequirement';
 import ClickRequirement from './requirements/ClickRequirement';
 import DefeatedRequirement from './requirements/DefeatedRequirement';
 import DiamondRequirement from './requirements/DiamondRequirement';
+import FarmHandRequirement from './requirements/FarmHandRequirement';
 import FarmPlotsUnlockedRequirement from './requirements/FarmPlotsUnlockedRequirement';
+import FarmPointsRequirement from './requirements/FarmPointsRequirement';
 import GymBadgeRequirement from './requirements/GymBadgeRequirement';
 import HatchRequirement from './requirements/HatchRequirement';
+import HatcheryHelperRequirement from './requirements/HatcheryHelperRequirement';
 import MoneyRequirement from './requirements/MoneyRequirement';
 import MaxLevelOakItemRequirement from './requirements/MaxLevelOakItemRequirement';
 import MaxRegionRequirement from './requirements/MaxRegionRequirement';
 import PokeballRequirement from './requirements/PokeballRequirement';
+import PokerusStatusRequirement from './requirements/PokerusStatusRequirement';
 import ProteinObtainRequirement from './requirements/ProteinObtainRequirement';
 import QuestRequirement from './requirements/QuestRequirement';
+import QuestLevelRequirement from './requirements/QuestLevelRequirement';
 import RouteKillRequirement from './requirements/RouteKillRequirement';
 import SeededDateRequirement from './requirements/SeededDateRequirement';
+import SeviiCaughtRequirement from './requirements/SeviiCaughtRequirement';
 import ShinyPokemonRequirement from './requirements/ShinyPokemonRequirement';
 import SubregionRequirement from './requirements/SubregionRequirement';
 import TokenRequirement from './requirements/TokenRequirement';
 import UndergroundItemsFoundRequirement from './requirements/UndergroundItemsFoundRequirement';
+import UndergroundItemValueType from './enums/UndergroundItemValueType';
+import UndergroundItem from './underground/UndergroundItem';
+import UndergroundItems from './underground/UndergroundItems';
 import UndergroundLayersMinedRequirement from './requirements/UndergroundLayersMinedRequirement';
 import WeatherRequirement from './requirements/WeatherRequirement';
 import { SortModules, SortSaves } from './Sortable';
@@ -110,7 +123,11 @@ import Achievement from './achievements/Achievement';
 import Gems from './gems/Gems';
 import QuestLineCompletedRequirement from './requirements/QuestLineCompletedRequirement';
 import QuestLineStepCompletedRequirement from './requirements/QuestLineStepCompletedRequirement';
+import QuestLineStartedRequirement from './requirements/QuestLineStartedRequirement';
 import TemporaryBattleRequirement from './requirements/TemporaryBattleRequirement';
+import DayOfWeekRequirement from './requirements/DayOfWeekRequirement';
+import SaveReminder from './saveReminder/SaveReminder';
+import lazyLoad from './utilities/LazyLoader';
 
 Object.assign(<any>window, {
     SaveSelector,
@@ -134,6 +151,7 @@ Object.assign(<any>window, {
     KeyItemType,
     MulchType,
     PlotStage,
+    QuestLineState,
     BooleanSetting,
     RangeSetting,
     Setting,
@@ -146,10 +164,12 @@ Object.assign(<any>window, {
     Settings,
     NotificationConstants,
     Notifier,
+    BreedingFilters,
     SortOptionConfigs,
     SortOptions,
     AchievementSortOptionConfigs,
     AchievementSortOptions,
+    AchievementCategory,
     LogBook,
     LogBookTypes,
     ChangelogItems,
@@ -178,6 +198,7 @@ Object.assign(<any>window, {
     OakItems,
     BoughtOakItem,
     OakItemController,
+    OakItemLoadout,
     OakItemLoadouts,
     SpecialRoutePokemon,
     RoutePokemon,
@@ -185,7 +206,6 @@ Object.assign(<any>window, {
     Routes,
     SubRegion,
     SubRegions,
-    AlolaSubRegions,
     Requirement,
     AchievementRequirement,
     NullRequirement,
@@ -202,21 +222,30 @@ Object.assign(<any>window, {
     ClickRequirement,
     DefeatedRequirement,
     DiamondRequirement,
+    FarmHandRequirement,
     FarmPlotsUnlockedRequirement,
+    FarmPointsRequirement,
     GymBadgeRequirement,
     HatchRequirement,
+    HatcheryHelperRequirement,
     MoneyRequirement,
     MaxLevelOakItemRequirement,
     MaxRegionRequirement,
     PokeballRequirement,
+    PokerusStatusRequirement,
     ProteinObtainRequirement,
     QuestRequirement,
+    QuestLevelRequirement,
     RouteKillRequirement,
     SeededDateRequirement,
+    SeviiCaughtRequirement,
     ShinyPokemonRequirement,
     SubregionRequirement,
     TokenRequirement,
     UndergroundItemsFoundRequirement,
+    UndergroundItemValueType,
+    UndergroundItem,
+    UndergroundItems,
     UndergroundLayersMinedRequirement,
     WeatherRequirement,
     SortModules,
@@ -228,5 +257,9 @@ Object.assign(<any>window, {
     Gems,
     QuestLineCompletedRequirement,
     QuestLineStepCompletedRequirement,
+    QuestLineStartedRequirement,
     TemporaryBattleRequirement,
+    DayOfWeekRequirement,
+    SaveReminder,
+    lazyLoad,
 });

@@ -6,18 +6,21 @@
 ///<reference path="TownContent.ts"/>
 
 type TownOptionalArgument = {
-    requirements?: (Requirement | OneFromManyRequirement)[],
+    requirements?: Requirement[],
     npcs?: NPC[],
+    // Currently only used for Sevii achievements
+    subRegion?: number,
 };
 
 class Town {
     public name: string;
     public region: GameConstants.Region;
-    public requirements: (Requirement | OneFromManyRequirement)[];
+    public requirements: Requirement[];
     public dungeon?: Dungeon;
     public npcs?: NPC[];
     public startingTown: boolean;
     public content: TownContent[];
+    public subRegion: number;
 
     constructor(
         name: string,
@@ -33,6 +36,7 @@ class Town {
         this.npcs = optional.npcs;
         this.startingTown = GameConstants.StartingTowns.includes(this.name);
         this.content = content;
+        this.subRegion = optional.subRegion ?? 0;
 
         if (GymList[name]) {
             const gym = GymList[name];
@@ -57,8 +61,9 @@ class Town {
 class DungeonTown extends Town {
     dungeon: Dungeon
 
-    constructor(name: string, region: GameConstants.Region, requirements: (Requirement | OneFromManyRequirement)[] = []) {
-        super(name, region, [], { requirements });
+    constructor(name: string, region: GameConstants.Region, requirements: Requirement[] = [], content: TownContent[] = [], optional: TownOptionalArgument = {}) {
+        optional.requirements = requirements;
+        super(name, region, content, optional);
         this.dungeon = dungeonList[name];
     }
 }

@@ -62,21 +62,23 @@ class BattleFrontierRunner {
         const stageBeaten = this.stage() - 1;
         // Give Battle Points and Money based on how far the user got
         const battleMultiplier = Math.max(stageBeaten / 100, 1);
-        const battlePointsEarned = Math.round(stageBeaten * battleMultiplier);
-        const moneyEarned = stageBeaten * 100 * battleMultiplier;
+        let battlePointsEarned = Math.round(stageBeaten * battleMultiplier);
+        let moneyEarned = stageBeaten * 100 * battleMultiplier;
+
+        // Award battle points and dollars and retrieve their computed values
+        battlePointsEarned = App.game.wallet.gainBattlePoints(battlePointsEarned).amount;
+        moneyEarned = App.game.wallet.gainMoney(moneyEarned, true).amount;
 
         Notifier.notify({
             title: 'Battle Frontier',
-            message: `You managed to beat stage ${stageBeaten}.\nYou received ${battlePointsEarned} BP`,
+            message: `You managed to beat stage ${stageBeaten.toLocaleString('en-US')}.\nYou received <img src="./assets/images/currency/battlePoint.svg" height="24px"/> ${battlePointsEarned.toLocaleString('en-US')}.\nYou received <img src="./assets/images/currency/money.svg" height="24px"/> ${moneyEarned.toLocaleString('en-US')}.`,
+            strippedMessage: `You managed to beat stage ${stageBeaten.toLocaleString('en-US')}.\nYou received ${battlePointsEarned.toLocaleString('en-US')} Battle Points.\nYou received ${moneyEarned.toLocaleString('en-US')} Pokédollars.`,
             type: NotificationConstants.NotificationOption.success,
             setting: NotificationConstants.NotificationSetting.General.battle_frontier,
-            timeout: 5 * GameConstants.MINUTE,
+            sound: NotificationConstants.NotificationSound.General.battle_frontier,
+            timeout: 30 * GameConstants.MINUTE,
         });
-
-        // Award battle points
-        App.game.wallet.gainBattlePoints(battlePointsEarned);
-        App.game.wallet.gainMoney(moneyEarned);
-        const reward = BattleFrontierMilestones.nextMileStone();
+        App.game.logbook.newLog(LogBookTypes.FRONTIER, `Cleared stage ${stageBeaten.toLocaleString('en-US')} of the Battle Frontier and received ${battlePointsEarned.toLocaleString('en-US')} Battle Points.`);
 
         this.checkpoint(1);
 
@@ -87,13 +89,13 @@ class BattleFrontierRunner {
             title: 'Battle Frontier',
             message: 'Are you sure you want to leave?\n\nYou can always return later and start off where you left.',
             type: NotificationConstants.NotificationOption.danger,
-            confirm: 'leave',
+            confirm: 'Leave',
         }).then(confirmed => {
             if (confirmed) {
                 // Don't give any points, user quit the challenge
                 Notifier.notify({
                     title: 'Battle Frontier',
-                    message: `Checkpoint set for stage ${this.stage()}`,
+                    message: `Checkpoint set for stage ${this.stage()}.`,
                     type: NotificationConstants.NotificationOption.info,
                     timeout: 1 * GameConstants.MINUTE,
                 });

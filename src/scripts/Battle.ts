@@ -74,6 +74,8 @@ class Battle {
     public static defeatPokemon() {
         const enemyPokemon = this.enemyPokemon();
         Battle.route = player.route();
+        const region = player.region;
+        const catchRoute = player.route(); // Has to be set, the Battle.route is "zeroed" on region change
         enemyPokemon.defeat();
 
         GameHelper.incrementObservable(App.game.statistics.routeKills[player.region][Battle.route]);
@@ -86,7 +88,7 @@ class Battle {
             this.prepareCatch(enemyPokemon, pokeBall);
             setTimeout(
                 () => {
-                    this.attemptCatch(enemyPokemon);
+                    this.attemptCatch(enemyPokemon, catchRoute, region);
                     if (Battle.route != 0) {
                         this.generateNewEnemy();
                     }
@@ -108,13 +110,11 @@ class Battle {
      */
     public static generateNewEnemy() {
         this.counter = 0;
-        this.enemyPokemon(PokemonFactory.generateWildPokemon(player.route(), player.region));
+        this.enemyPokemon(PokemonFactory.generateWildPokemon(player.route(), player.region, player.subregionObject()));
         const enemyPokemon = this.enemyPokemon();
-        GameHelper.incrementObservable(App.game.statistics.pokemonEncountered[enemyPokemon.id]);
-        GameHelper.incrementObservable(App.game.statistics.totalPokemonEncountered);
+        PokemonHelper.incrementPokemonStatistics(enemyPokemon.id, GameConstants.STATISTIC_ENCOUNTERED, enemyPokemon.shiny, enemyPokemon.gender);
+        // Shiny
         if (enemyPokemon.shiny) {
-            GameHelper.incrementObservable(App.game.statistics.shinyPokemonEncountered[enemyPokemon.id]);
-            GameHelper.incrementObservable(App.game.statistics.totalShinyPokemonEncountered);
             App.game.logbook.newLog(LogBookTypes.SHINY, `[${Routes.getRoute(player.region, player.route()).routeName}] You encountered a wild shiny ${enemyPokemon.name}.`);
         } else if (!App.game.party.alreadyCaughtPokemon(enemyPokemon.id) && enemyPokemon.health()) {
             App.game.logbook.newLog(LogBookTypes.NEW, `[${Routes.getRoute(player.region, player.route()).routeName}] You encountered a wild ${enemyPokemon.name}.`);
@@ -135,15 +135,15 @@ class Battle {
         App.game.pokeballs.usePokeball(pokeBall);
     }
 
-    protected static attemptCatch(enemyPokemon: BattlePokemon) {
+    protected static attemptCatch(enemyPokemon: BattlePokemon, route: number, region: GameConstants.Region) {
         if (enemyPokemon == null) {
             this.catching(false);
             return;
         }
         if (Rand.chance(this.catchRateActual() / 100)) { // Caught
-            this.catchPokemon(enemyPokemon);
+            this.catchPokemon(enemyPokemon, route, region);
         } else if (enemyPokemon.shiny) { // Failed to catch, Shiny
-            App.game.logbook.newLog(LogBookTypes.ESCAPED, `The Shiny ${enemyPokemon.name} escaped!`);
+            App.game.logbook.newLog(LogBookTypes.ESCAPED, `The shiny ${enemyPokemon.name} escaped!`);
         } else if (!App.game.party.alreadyCaughtPokemon(enemyPokemon.id)) { // Failed to catch, Uncaught
             App.game.logbook.newLog(LogBookTypes.ESCAPED, `The wild ${enemyPokemon.name} escaped!`);
         }
@@ -151,11 +151,13 @@ class Battle {
         this.catchRateActual(null);
     }
 
-    public static catchPokemon(enemyPokemon: BattlePokemon) {
-        const catchRoute = Battle.route || player.town()?.dungeon?.difficultyRoute || 1;
-        App.game.wallet.gainDungeonTokens(PokemonFactory.routeDungeonTokens(catchRoute, player.region));
+    public static catchPokemon(enemyPokemon: BattlePokemon, route: number, region: GameConstants.Region) {
+        App.game.wallet.gainDungeonTokens(PokemonFactory.routeDungeonTokens(route, region));
         App.game.oakItems.use(OakItemType.Magic_Ball);
-        App.game.party.gainPokemonById(enemyPokemon.id, enemyPokemon.shiny);
+        App.game.party.gainPokemonById(enemyPokemon.id, enemyPokemon.shiny, undefined, enemyPokemon.gender);
+        const partyPokemon = App.game.party.getPokemon(enemyPokemon.id);
+        const epBonus = App.game.pokeballs.getEPBonus(this.pokeball());
+        partyPokemon.effortPoints += App.game.party.calculateEffortPoints(partyPokemon, enemyPokemon.shiny, enemyPokemon.ep * epBonus);
     }
 
     static gainItem() {

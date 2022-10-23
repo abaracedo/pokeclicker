@@ -41,7 +41,9 @@ class Game {
         public achievementTracker: AchievementTracker,
         public challenges: Challenges,
         public battleFrontier: BattleFrontier,
-        public multiplier: Multiplier
+        public multiplier: Multiplier,
+        public saveReminder: SaveReminder,
+        public battleCafe: BattleCafeSaveObject
     ) {
         this._gameState = ko.observable(GameConstants.GameState.paused);
     }
@@ -85,10 +87,9 @@ class Game {
         if (player.starter() != GameConstants.Starter.None) {
             Battle.generateNewEnemy();
         } else {
-            const battlePokemon = new BattlePokemon('MissingNo.', 0, PokemonType.None, PokemonType.None, 0, 0, 0, 0, new Amount(0, GameConstants.Currency.money), false);
+            const battlePokemon = new BattlePokemon('MissingNo.', 0, PokemonType.None, PokemonType.None, 0, 0, 0, 0, new Amount(0, GameConstants.Currency.money), false, 0, GameConstants.BattlePokemonGender.NoGender);
             Battle.enemyPokemon(battlePokemon);
         }
-        this.farming.resetAuras();
         //Safari.load();
         Underground.energyTick(this.underground.getEnergyRegenTime());
         AchievementHandler.calculateMaxBonus(); //recalculate bonus based on active challenges
@@ -99,9 +100,12 @@ class Game {
         BerryDeal.generateDeals(now);
         Weather.generateWeather(now);
         GemDeal.generateDeals();
+        ShardDeal.generateDeals();
         RoamingPokemonList.generateIncreasedChanceRoutes(now);
 
-        this.computeOfflineEarnings();
+        if (Settings.getSetting('disableOfflineProgress').value === false) {
+            this.computeOfflineEarnings();
+        }
         this.checkAndFix();
 
         // If the player isn't on a route, they're in a town/dungeon
@@ -142,9 +146,9 @@ class Game {
 
             Notifier.notify({
                 type: NotificationConstants.NotificationOption.info,
-                title: 'Offline progress',
+                title: 'Offline-time Bonus',
                 message: `Defeated: ${numberOfPokemonDefeated.toLocaleString('en-US')} Pokémon\nEarned: <img src="./assets/images/currency/money.svg" height="24px"/> ${moneyToEarn.toLocaleString('en-US')}`,
-                strippedMessage: `Defeated: ${numberOfPokemonDefeated.toLocaleString('en-US')} Pokémon\nEarned: ${moneyToEarn.toLocaleString('en-US')} money`,
+                strippedMessage: `Defeated: ${numberOfPokemonDefeated.toLocaleString('en-US')} Pokémon\nEarned: ${moneyToEarn.toLocaleString('en-US')} Pokédollars`,
                 timeout: 2 * GameConstants.MINUTE,
                 setting: NotificationConstants.NotificationSetting.General.offline_earnings,
             });
@@ -185,6 +189,17 @@ class Game {
                 App.game.quests.getQuestLine('Mining Expedition').beginQuest(App.game.quests.getQuestLine('Mining Expedition').curQuest());
             }
         }
+        // Vivillon questline (if not started due to gym bug)
+        if (App.game.quests.getQuestLine('The Great Vivillon Hunt!').state() == QuestLineState.inactive) {
+            if (App.game.party.alreadyCaughtPokemon(666.01)) {
+                // Has obtained Vivillon (Pokéball)
+                App.game.quests.getQuestLine('The Great Vivillon Hunt!').state(QuestLineState.ended);
+            } else if (App.game.badgeCase.badgeList[BadgeEnums.Iceberg]()) {
+                // Has the Iceberg badge, Quest is started
+                App.game.quests.getQuestLine('The Great Vivillon Hunt!').state(QuestLineState.started);
+                App.game.quests.getQuestLine('The Great Vivillon Hunt!').beginQuest(App.game.quests.getQuestLine('The Great Vivillon Hunt!').curQuest());
+            }
+        }
         // Check if Koga has been defeated, but have no safari ticket yet
         if (App.game.badgeCase.badgeList[BadgeEnums.Soul]() && !App.game.keyItems.itemList[KeyItemType.Safari_ticket].isUnlocked()) {
             App.game.keyItems.gainKeyItem(KeyItemType.Safari_ticket, true);
@@ -193,6 +208,24 @@ class Game {
         if (App.game.badgeCase.badgeList[BadgeEnums.Earth]() && !App.game.keyItems.itemList[KeyItemType.Gem_case].isUnlocked()) {
             App.game.keyItems.gainKeyItem(KeyItemType.Gem_case, true);
         }
+        // Check that none of our quest are less than their initial value
+        App.game.quests.questLines().filter(q => q.state() == 1).forEach(questLine => {
+            const quest = questLine.curQuestObject();
+            if (quest.initial() > quest.focus()) {
+                quest.initial(quest.focus());
+            }
+        });
+        // Check for breeding pokemons not in queue
+        const breeding = [...App.game.breeding.eggList.map((l) => l().pokemon), ...App.game.breeding.queueList()];
+        App.game.party._caughtPokemon().filter((p) => p.breeding).forEach((p) => {
+            if (!breeding.includes(p.id)) {
+                p.breeding = false;
+            }
+        });
+        // Egg partyPokemon requires App.game.party and cannot be set until after loading is complete
+        App.game.breeding.eggList.filter(e => e().pokemon).forEach(e => {
+            e().setPartyPokemon();
+        });
     }
 
     start() {
@@ -357,6 +390,10 @@ class Game {
                         timeout: 3e4,
                     });
                 }
+                // Give the players more Battle Cafe spins
+                BattleCafeController.spinsLeft(BattleCafeController.defaultSpins);
+
+                DayOfWeekRequirement.date(now.getDay());
             }
 
             // Check if it's a new hour
@@ -398,6 +435,12 @@ class Game {
         GameHelper.counter += GameConstants.TICK_TIME;
         if (GameHelper.counter >= GameConstants.MINUTE) {
             GameHelper.tick();
+        }
+
+        // Check our save reminder once every 5 minutes
+        SaveReminder.counter += GameConstants.TICK_TIME;
+        if (SaveReminder.counter >= 5 * GameConstants.MINUTE) {
+            SaveReminder.tick();
         }
     }
 
